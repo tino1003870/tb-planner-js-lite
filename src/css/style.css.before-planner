@@ -1,0 +1,117 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #f5f5f5;
+    color: #222;
+}
+
+header {
+    padding: 1rem 1.5rem;
+    background: #222;
+    color: white;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+main {
+    max-width: 1100px;
+    margin: auto;
+    padding: 1rem;
+}
+
+section {
+    background: white;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 6px;
+}
+
+h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.8rem;
+}
+
+input {
+    display: block;
+    width: 100%;
+    margin-top: 0.3rem;
+    padding: 0.6rem;
+    font: inherit;
+}
+
+button {
+    margin: 0.25rem;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+}
+
+#status {
+    padding: 0.6rem;
+    background: #eee;
+    font-family: monospace;
+}
+
+pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    background: #111;
+    color: #eee;
+    padding: 1rem;
+    min-height: 100px;
+}
+
+.todo-count {
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.todo-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.todo-table th,
+.todo-table td {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.todo-table th {
+    font-weight: bold;
+}
+
+.todo-table td:first-child {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.todo-table td:nth-child(3),
+.todo-table td:nth-child(4),
+.todo-table td:nth-child(6),
+.todo-table td:nth-child(8) {
+    white-space: nowrap;
+}
+
+.todo-get-button {
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.todo-table td:last-child {
+    white-space: nowrap;
+}

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TB Planner JS – CalDAV Test</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+<header>
+    <h1>TB Planner JS – CalDAV Test</h1>
+</header>
+
+<main>
+
+    <section class="connection">
+        <h2>Connection</h2>
+
+        <label>
+            CalDAV URL
+            <input id="serverUrl"
+                   type="url"
+                   value="https://caldav.web.de/begenda/dav/bofhdd@web.de/calendar">
+        </label>
+
+        <label>
+            Username
+            <input id="username"
+                   type="text"
+                   value="bofhdd@web.de"
+                   autocomplete="username">
+        </label>
+
+        <label>
+            Password
+            <input id="password"
+                   type="password"
+                   autocomplete="current-password">
+        </label>
+    </section>
+
+    <section class="operations">
+        <h2>Operations</h2>
+
+        <button data-operation="OPTIONS">OPTIONS</button>
+        <button data-operation="PROPFIND">PROPFIND</button>
+        <button data-operation="REPORT">REPORT</button>
+
+        <input
+            id="newTaskSummary"
+            type="text"
+            placeholder="Summary für neuen Task"
+            value="TB-PLANNER-NEW">
+
+        <button id="newTaskButton" type="button">NEW TASK</button>
+
+        <button data-operation="GET">GET</button>
+        <button data-operation="PUT">PUT</button>
+        <button data-operation="DELETE">DELETE</button>
+        
+    </section>
+
+    <section class="status">
+        <h2>Status</h2>
+
+        <div id="status">
+            Ready
+        </div>
+    </section>
+
+    <section>
+        <h2>Response Headers</h2>
+
+        <pre id="headers"></pre>
+    </section>
+
+    <section>
+        <h2>Response Body</h2>
+
+        <pre id="response"></pre>
+    </section>
+
+    <section>
+        <h2>PUT Editor</h2>
+
+        <label>
+            ETag
+            <input id="etag" type="text" readonly>
+        </label>
+
+        <label>
+            Resource URL
+            <input id="resourceUrl" type="text">
+        </label>
+
+        <textarea id="putBody"
+                  rows="20"
+                  spellcheck="false"
+                  placeholder="GET a VTODO first..."></textarea>
+
+        <button id="putButton" type="button">
+            PUT
+        </button>
+    </section>
+
+    <section>
+        <h2>VTODOs</h2>
+
+        <pre id="todos"></pre>
+
+    <h2>Debug</h2>
+    <pre id="debug"></pre>
+    </section>
+
+</main>
+
+<script type="module" src="js/app.js"></script>
+
+</body>
+</html>

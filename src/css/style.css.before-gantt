@@ -1,0 +1,507 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+
+    font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    background: #f5f5f5;
+    color: #222;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+
+/* ------------------------------------------------------------
+   Header
+   ------------------------------------------------------------ */
+
+.planner-header {
+    flex: 0 0 auto;
+
+    padding: 10px 14px;
+
+    background: #ffffff;
+
+    border-bottom: 1px solid #c8c8c8;
+}
+
+.title-row h1 {
+    margin: 0 0 8px 0;
+
+    font-size: 22px;
+    font-weight: 600;
+}
+
+
+/* ------------------------------------------------------------
+   Connection
+   ------------------------------------------------------------ */
+
+.connection-row,
+.credentials-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    margin-bottom: 6px;
+}
+
+.connection-row label,
+.credentials-row label {
+    white-space: nowrap;
+
+    font-size: 13px;
+}
+
+#serverUrl {
+    flex: 1 1 auto;
+
+    min-width: 250px;
+}
+
+#username {
+    width: 220px;
+}
+
+#password {
+    width: 220px;
+}
+
+input {
+    height: 30px;
+
+    padding: 4px 8px;
+
+    border: 1px solid #aaa;
+    border-radius: 3px;
+
+    background: #fff;
+
+    font-size: 13px;
+}
+
+input:focus {
+    outline: none;
+    border-color: #666;
+}
+
+
+/* ------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------ */
+
+button {
+    min-height: 30px;
+
+    padding: 4px 10px;
+
+    border: 1px solid #999;
+    border-radius: 3px;
+
+    background: #eeeeee;
+
+    color: #222;
+
+    font-size: 13px;
+
+    cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+    background: #e2e2e2;
+}
+
+button:active:not(:disabled) {
+    background: #d4d4d4;
+}
+
+button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+
+/* ------------------------------------------------------------
+   Toolbars
+   ------------------------------------------------------------ */
+
+.task-toolbar,
+.planner-toolbar {
+    display: flex;
+    align-items: center;
+
+    gap: 6px;
+
+    flex-wrap: wrap;
+
+    margin-top: 7px;
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+
+    gap: 4px;
+
+    padding-right: 8px;
+
+    border-right: 1px solid #ccc;
+}
+
+.toolbar-group:last-child {
+    border-right: none;
+}
+
+.zoom-group span {
+    margin-right: 2px;
+
+    font-size: 13px;
+}
+
+
+/* ------------------------------------------------------------
+   Main planner
+   ------------------------------------------------------------ */
+
+.planner-main {
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    overflow: auto;
+
+    background: #ffffff;
+}
+
+.planner {
+    min-width: 900px;
+}
+
+
+/* ------------------------------------------------------------
+   Planner header
+   ------------------------------------------------------------ */
+
+.planner-table-header {
+    display: grid;
+
+    grid-template-columns:
+        70px
+        320px
+        minmax(510px, 1fr);
+
+    position: sticky;
+    top: 0;
+    z-index: 20;
+
+    height: 48px;
+
+    background: #eeeeee;
+
+    border-bottom: 1px solid #aaa;
+}
+
+.wbs-header,
+.task-header,
+.timeline-header {
+    display: flex;
+
+    align-items: center;
+
+    padding: 0 8px;
+
+    font-size: 13px;
+    font-weight: 600;
+
+    border-right: 1px solid #ccc;
+}
+
+.timeline-header {
+    overflow: hidden;
+
+    padding: 0;
+}
+
+
+/* ------------------------------------------------------------
+   Planner rows
+   ------------------------------------------------------------ */
+
+.planner-rows {
+    width: 100%;
+}
+
+.planner-row {
+    display: grid;
+
+    grid-template-columns:
+        70px
+        320px
+        minmax(510px, 1fr);
+
+    height: 48px;
+
+    border-bottom: 1px solid #ddd;
+
+    cursor: pointer;
+}
+
+.planner-row:hover {
+    background: #f4f4f4;
+}
+
+.planner-row.selected {
+    background: #dcecff;
+}
+
+
+/* ------------------------------------------------------------
+   WBS / task columns
+   ------------------------------------------------------------ */
+
+.wbs-cell,
+.task-cell,
+.timeline-cell {
+    min-width: 0;
+
+    border-right: 1px solid #ddd;
+}
+
+.wbs-cell {
+    display: flex;
+
+    align-items: center;
+
+    padding: 0 6px;
+
+    font-size: 12px;
+
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Consolas,
+        monospace;
+}
+
+.task-cell {
+    display: flex;
+
+    align-items: center;
+
+    overflow: hidden;
+
+    padding: 0 8px;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+
+    font-size: 13px;
+}
+
+.task-cell .tree-indent {
+    flex: 0 0 auto;
+}
+
+.task-cell .task-title {
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+
+/* ------------------------------------------------------------
+   Timeline
+   ------------------------------------------------------------ */
+
+.timeline-cell {
+    position: relative;
+
+    overflow: hidden;
+
+    background:
+        repeating-linear-gradient(
+            to right,
+            transparent 0,
+            transparent 47px,
+            #eeeeee 48px
+        );
+}
+
+.gantt-bar {
+    position: absolute;
+
+    top: 10px;
+
+    height: 28px;
+
+    min-width: 6px;
+
+    border: 1px solid #555;
+    border-radius: 3px;
+
+    background: #9fb7cf;
+
+    overflow: hidden;
+}
+
+.gantt-progress {
+    height: 100%;
+
+    width: 0%;
+
+    background: #607d9b;
+}
+
+.gantt-label {
+    position: absolute;
+
+    top: 0;
+    left: 5px;
+
+    right: 5px;
+
+    height: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    overflow: hidden;
+
+    white-space: nowrap;
+
+    text-overflow: ellipsis;
+
+    font-size: 11px;
+}
+
+
+/* ------------------------------------------------------------
+   Timeline header
+   ------------------------------------------------------------ */
+
+.timeline-header-inner {
+    display: flex;
+
+    height: 100%;
+}
+
+.timeline-day {
+    flex: 0 0 48px;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    border-right: 1px solid #ccc;
+
+    font-size: 10px;
+
+    white-space: nowrap;
+}
+
+.timeline-day.weekend {
+    background: #e8e8e8;
+}
+
+
+/* ------------------------------------------------------------
+   Footer
+   ------------------------------------------------------------ */
+
+.planner-footer {
+    flex: 0 0 auto;
+
+    min-height: 26px;
+
+    padding: 4px 10px;
+
+    background: #eeeeee;
+
+    border-top: 1px solid #ccc;
+
+    font-size: 12px;
+}
+
+
+/* ------------------------------------------------------------
+   Debug
+   ------------------------------------------------------------ */
+
+.debug-panel {
+    flex: 0 0 auto;
+
+    background: #fafafa;
+
+    border-top: 1px solid #ccc;
+}
+
+.debug-panel details {
+    padding: 4px 10px;
+}
+
+.debug-panel summary {
+    cursor: pointer;
+
+    font-size: 12px;
+}
+
+.debug-panel pre {
+    max-height: 220px;
+
+    overflow: auto;
+
+    margin: 6px 0;
+
+    padding: 8px;
+
+    background: #222;
+    color: #ddd;
+
+    font-size: 11px;
+
+    white-space: pre-wrap;
+}
+
+
+/* ------------------------------------------------------------
+   Responsive
+   ------------------------------------------------------------ */
+
+@media (max-width: 800px) {
+
+    .planner-table-header,
+    .planner-row {
+        grid-template-columns:
+            55px
+            240px
+            minmax(480px, 1fr);
+    }
+
+    .connection-row,
+    .credentials-row {
+        flex-wrap: wrap;
+    }
+
+    #serverUrl {
+        width: 100%;
+        flex-basis: 100%;
+    }
+}

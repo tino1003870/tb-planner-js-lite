@@ -1,0 +1,1824 @@
+import { executeCalDavRequest } from "./caldav.js";
+
+const statusElement =
+    document.getElementById("status");
+
+const headersElement =
+    document.getElementById("headers");
+
+const responseElement =
+    document.getElementById("response");
+
+const todosElement =
+    document.getElementById("plannerRows");
+
+const debugElement =
+    document.getElementById("debug");
+
+let currentTodos = [];
+
+let selectedTodo = null;
+
+function debugLog(message, data) {
+    let text = String(message);
+
+    if (data !== undefined) {
+        try {
+            text += " " + JSON.stringify(data, null, 2);
+        } catch {
+            text += " " + String(data);
+        }
+    }
+
+    console.log("[DEBUG]", text);
+
+    if (debugElement) {
+        debugElement.textContent += text + "\n";
+    }
+}
+
+
+/*
+ * Operation buttons
+ */
+document
+    .querySelectorAll("[data-operation]")
+    .forEach(button => {
+
+        button.addEventListener("click", async () => {
+
+            const operation =
+                button.dataset.operation;
+
+            /*
+             * DELETE is handled separately below because it must
+             * operate on the selected VTODO resource URL, not on
+             * the calendar URL.
+             */
+            if (operation === "DELETE") {
+                return;
+            }
+
+            const serverUrl =
+                document
+                    .getElementById("serverUrl")
+                    .value
+                    .trim();
+
+            const username =
+                document
+                    .getElementById("username")
+                    .value;
+
+            const password =
+                document
+                    .getElementById("password")
+                    .value;
+
+            if (!serverUrl) {
+                setStatus(
+                    "Please enter a CalDAV URL."
+                );
+                return;
+            }
+
+            setStatus(`${operation} ...`);
+
+            headersElement.textContent = "";
+            responseElement.textContent = "";
+
+            try {
+
+                const result =
+                    await executeCalDavRequest({
+                        operation,
+                        url: serverUrl,
+                        username,
+                        password
+                    });
+
+                debugLog("REPORT/REQUEST Ergebnis:", {
+                    operation,
+                    status: result.status,
+                    statusText: result.statusText,
+                    bodyLength: result.body ? result.body.length : 0,
+                    hasTodos: Array.isArray(result.todos),
+                    todoCount: Array.isArray(result.todos)
+                        ? result.todos.length
+                        : null
+                });
+
+                debugLog("REPORT/RESPONSE HEADERS:", result.headers);
+
+                if (result.requestDebug) {
+                    debugLog("REPORT/REQUEST Details:",
+                        result.requestDebug
+                    );
+                }
+
+                if (operation === "REPORT") {
+                    debugLog("REPORT XML Anfang:",
+                        result.body
+                            ? result.body.substring(0, 500)
+                            : ""
+                    );
+
+                    debugLog("REPORT todos:",
+                        result.todos
+                    );
+                }
+
+                setStatus(
+                    `${operation}: HTTP ${result.status} ${result.statusText}`
+                );
+
+                debugLog(
+                    "REPORT/REQUEST Ergebnis:",
+                    {
+                        operation: operation,
+                        status: result.status,
+                        statusText: result.statusText,
+                        bodyLength:
+                            result.body
+                                ? result.body.length
+                                : 0,
+                        hasTodos:
+                            Array.isArray(result.todos),
+                        todoCount:
+                            Array.isArray(result.todos)
+                                ? result.todos.length
+                                : null
+                    }
+                );
+
+                headersElement.textContent =
+                    result.headers;
+
+                responseElement.textContent =
+                    result.body;
+
+                if (
+                    operation === "REPORT" &&
+                    result.todos
+                ) {
+                    currentTodos = result.todos;
+                    displayTodos(currentTodos);
+                }
+
+            } catch (error) {
+
+                setStatus(
+                    `${operation}: ERROR`
+                );
+
+                responseElement.textContent =
+                    `${error.name}: ${error.message}`;
+            }
+        });
+    });
+
+
+/*
+ * Helper: append a text cell to a table row.
+ */
+function addCell(row, text) {
+    const cell = document.createElement("td");
+    cell.textContent = text ?? "";
+    row.appendChild(cell);
+}
+
+
+/*
+ * Format an iCalendar date/time value for display.
+ *
+ * Supports:
+ *   YYYYMMDD
+ *   YYYYMMDDTHHMMSS
+ *   YYYYMMDDTHHMMSSZ
+ */
+function formatIcsDate(value) {
+
+    if (!value) {
+        return "";
+    }
+
+    let text = String(value).trim();
+
+    /*
+     * Remove iCalendar value parameters if present.
+     * Example: VALUE=DATE:20260927
+     */
+    if (text.includes(":")) {
+        text = text.split(":").pop();
+    }
+
+    const match =
+        text.match(
+            /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2}))?Z?$/
+        );
+
+    if (!match) {
+        return text;
+    }
+
+    const [
+        ,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second
+    ] = match;
+
+    if (!hour) {
+        return `${day}.${month}.${year}`;
+    }
+
+    return `${day}.${month}.${year} ${hour}:${minute}`;
+}
+
+
+/*
+ * Display VTODOs
+ */
+function displayTodos(todos) {
+
+    debugLog(
+        "displayTodos() aufgerufen:",
+        {
+            isArray: Array.isArray(todos),
+            count: Array.isArray(todos)
+                ? todos.length
+                : null
+        }
+    );
+
+    if (!todosElement) {
+        return;
+    }
+
+    todosElement.innerHTML = "";
+
+    if (!Array.isArray(todos) || todos.length === 0) {
+        todosElement.textContent =
+            "Keine VTODOs gefunden.";
+
+        selectedTodo = null;
+        hideTodoEditor();
+        updateSelectionButtons();
+
+        return;
+    }
+
+
+    /*
+     * Build WBS hierarchy.
+     */
+    const byUid = new Map();
+
+    for (const todo of todos) {
+
+        byUid.set(
+            todo.uid,
+            {
+                ...todo,
+                children: []
+            }
+        );
+
+    }
+
+
+    const roots = [];
+
+
+    for (const todo of byUid.values()) {
+
+        if (
+            todo.parent &&
+            byUid.has(todo.parent)
+        ) {
+
+            byUid
+                .get(todo.parent)
+                .children
+                .push(todo);
+
+        } else {
+
+            roots.push(todo);
+
+        }
+
+    }
+
+
+    const wbsCompare = (a, b) => {
+
+        const parseWbs = value => {
+
+            if (!value) {
+                return [];
+            }
+
+            return String(value)
+                .split(".")
+                .map(part => {
+
+                    const n = Number(part);
+
+                    return Number.isFinite(n)
+                        ? n
+                        : Number.MAX_SAFE_INTEGER;
+
+                });
+
+        };
+
+
+        const aa = parseWbs(a.wbs);
+        const bb = parseWbs(b.wbs);
+
+        const length =
+            Math.max(
+                aa.length,
+                bb.length
+            );
+
+
+        for (
+            let i = 0;
+            i < length;
+            i++
+        ) {
+
+            const av =
+                aa[i] ??
+                Number.MAX_SAFE_INTEGER;
+
+            const bv =
+                bb[i] ??
+                Number.MAX_SAFE_INTEGER;
+
+            if (av !== bv) {
+                return av - bv;
+            }
+
+        }
+
+
+        return (
+            (Number.isFinite(a.order)
+                ? a.order
+                : 999999) -
+            (Number.isFinite(b.order)
+                ? b.order
+                : 999999)
+        );
+
+    };
+
+
+    const sortTree = nodes => {
+
+        nodes.sort(wbsCompare);
+
+        for (const node of nodes) {
+            sortTree(node.children);
+        }
+
+    };
+
+
+    sortTree(roots);
+
+
+    /*
+     * Planner table.
+     */
+    const info =
+        document.createElement("div");
+
+    info.className =
+        "todo-count";
+
+    info.textContent =
+        `${todos.length} Aufgaben`;
+
+    todosElement.appendChild(info);
+
+
+    const table =
+        document.createElement("table");
+
+    table.className =
+        "planner-table";
+
+
+    const thead =
+        document.createElement("thead");
+
+    const header =
+        document.createElement("tr");
+
+
+    for (const text of [
+        "WBS",
+        "Aufgabe",
+        "Start",
+        "Fällig",
+        "Status",
+        "%"
+    ]) {
+
+        const th =
+            document.createElement("th");
+
+        th.textContent = text;
+
+        header.appendChild(th);
+
+    }
+
+
+    thead.appendChild(header);
+    table.appendChild(thead);
+
+
+    const tbody =
+        document.createElement("tbody");
+
+
+    const appendNode =
+        (todo, level) => {
+
+        const row =
+            document.createElement("tr");
+
+        row.className =
+            level === 0
+                ? "planner-root"
+                : "planner-child";
+
+
+        if (
+            selectedTodo &&
+            selectedTodo.uid === todo.uid
+        ) {
+
+            row.classList.add(
+                "todo-row-selected"
+            );
+
+        }
+
+
+        /*
+         * WBS
+         */
+        addCell(
+            row,
+            todo.wbs || ""
+        );
+
+
+        /*
+         * Summary
+         */
+        const summaryCell =
+            document.createElement("td");
+
+        summaryCell.className =
+            "planner-summary";
+
+        summaryCell.style.paddingLeft =
+            `${12 + level * 24}px`;
+
+        summaryCell.textContent =
+            todo.summary ||
+            "(ohne Titel)";
+
+        row.appendChild(summaryCell);
+
+
+        addCell(
+            row,
+            formatIcsDate(todo.dtstart)
+        );
+
+
+        addCell(
+            row,
+            formatIcsDate(todo.due)
+        );
+
+
+        addCell(
+            row,
+            todo.status || ""
+        );
+
+
+        addCell(
+            row,
+            Number.isFinite(
+                todo.percentComplete
+            )
+                ? String(todo.percentComplete)
+                : ""
+        );
+
+
+        /*
+         * Select task.
+         */
+        row.addEventListener(
+            "click",
+            event => {
+
+                /*
+                 * Selection belongs to the row.
+                 * Buttons are currently no longer
+                 * inside the row.
+                 */
+                selectTodo(todo);
+
+            }
+        );
+
+
+        tbody.appendChild(row);
+
+
+        for (const child of todo.children) {
+
+            appendNode(
+                child,
+                level + 1
+            );
+
+        }
+
+    };
+
+
+    for (const root of roots) {
+
+        appendNode(
+            root,
+            0
+        );
+
+    }
+
+
+    table.appendChild(tbody);
+
+    todosElement.appendChild(table);
+
+
+    /*
+     * Restore the selected task after a refresh,
+     * if it still exists.
+     */
+    if (selectedTodo) {
+
+        const refreshed =
+            todos.find(
+                todo =>
+                    todo.uid === selectedTodo.uid
+            );
+
+        if (refreshed) {
+
+            selectedTodo =
+                refreshed;
+
+            updateTodoEditor();
+
+        } else {
+
+            selectedTodo = null;
+
+            hideTodoEditor();
+
+        }
+
+    }
+
+    updateSelectionButtons();
+}
+
+
+function parseIcsDate(value) {
+
+    if (!value) {
+        return null;
+    }
+
+    let text = String(value).trim();
+
+    if (text.includes(":")) {
+        text = text.split(":").pop();
+    }
+
+    const match =
+        text.match(
+            /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2}))?Z?$/
+        );
+
+    if (!match) {
+        return null;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+
+    if (!match[4]) {
+        return new Date(
+            year,
+            month,
+            day
+        );
+    }
+
+    return new Date(
+        year,
+        month,
+        day,
+        Number(match[4]),
+        Number(match[5]),
+        Number(match[6])
+    );
+}
+
+
+function addDays(date, days) {
+
+    const result =
+        new Date(date);
+
+    result.setDate(
+        result.getDate() + days
+    );
+
+    return result;
+}
+
+
+function dateDiff(a, b) {
+
+    const aa =
+        new Date(a);
+
+    const bb =
+        new Date(b);
+
+    aa.setHours(0, 0, 0, 0);
+    bb.setHours(0, 0, 0, 0);
+
+    return Math.round(
+        (
+            bb.getTime() -
+            aa.getTime()
+        ) /
+        86400000
+    );
+}
+
+
+function formatMonthRange(start, end) {
+
+    const options = {
+        month: "long",
+        year: "numeric"
+    };
+
+    if (
+        start.getFullYear() ===
+        end.getFullYear() &&
+        start.getMonth() ===
+        end.getMonth()
+    ) {
+        return start.toLocaleDateString(
+            "de-DE",
+            options
+        );
+    }
+
+    return (
+        start.toLocaleDateString(
+            "de-DE",
+            {
+                month: "long",
+                year: "numeric"
+            }
+        ) +
+        " – " +
+        end.toLocaleDateString(
+            "de-DE",
+            {
+                month: "long",
+                year: "numeric"
+            }
+        )
+    );
+}
+
+
+
+async function deleteTodo(todo) {
+
+    if (!todo || !todo.href) {
+
+        setStatus(
+            "DELETE: Keine Resource-URL vorhanden."
+        );
+
+        return;
+    }
+
+    const username =
+        document
+            .getElementById("username")
+            .value;
+
+    const password =
+        document
+            .getElementById("password")
+            .value;
+
+    const calendarUrl =
+        document
+            .getElementById("serverUrl")
+            .value
+            .trim();
+
+    /*
+     * REPORT returns an absolute path such as:
+     *
+     * /begenda/dav/.../calendar/<uid>.ics
+     *
+     * Convert it into the complete HTTPS URL.
+     */
+    const resourceUrl =
+        new URL(
+            todo.href,
+            calendarUrl
+        ).href;
+
+    const confirmed =
+        window.confirm(
+            `Aufgabe "${todo.summary || todo.uid}" wirklich löschen?`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    setStatus(
+        `DELETE: ${todo.summary || todo.uid} ...`
+    );
+
+    try {
+
+        const result =
+            await executeCalDavRequest({
+                operation: "DELETE",
+                url: resourceUrl,
+                username,
+                password
+            });
+
+        debugLog(
+            "DELETE Ergebnis:",
+            {
+                uid: todo.uid,
+                summary: todo.summary,
+                url: resourceUrl,
+                status: result.status,
+                statusText: result.statusText
+            }
+        );
+
+        headersElement.textContent =
+            result.headers;
+
+        responseElement.textContent =
+            result.body;
+
+        setStatus(
+            `DELETE: HTTP ${result.status} ${result.statusText}`
+        );
+
+        /*
+         * Reload the complete calendar after
+         * a successful DELETE.
+         */
+        if (
+            result.status >= 200 &&
+            result.status < 300
+        ) {
+
+            await loadTodos();
+        }
+
+    } catch (error) {
+
+        setStatus(
+            "DELETE: ERROR"
+        );
+
+        responseElement.textContent =
+            `${error.name}: ${error.message}`;
+
+        debugLog(
+            "DELETE Fehler:",
+            error
+        );
+    }
+}
+
+
+/*
+ * Load all VTODOs from the configured CalDAV calendar.
+ *
+ * The visible serverUrl is always the calendar collection URL.
+ */
+async function loadTodos() {
+
+    const calendarUrl =
+        document
+            .getElementById("serverUrl")
+            .value
+            .trim();
+
+    const username =
+        document
+            .getElementById("username")
+            .value;
+
+    const password =
+        document
+            .getElementById("password")
+            .value;
+
+    if (!calendarUrl) {
+        setStatus("REPORT: No CalDAV calendar URL.");
+        return;
+    }
+
+    setStatus("REPORT ...");
+
+    try {
+
+        const result =
+            await executeCalDavRequest({
+                operation: "REPORT",
+                url: calendarUrl,
+                username,
+                password
+            });
+
+        setStatus(
+            `REPORT: HTTP ${result.status} ${result.statusText}`
+        );
+
+        headersElement.textContent =
+            result.headers;
+
+        responseElement.textContent =
+            result.body;
+
+        if (Array.isArray(result.todos)) {
+
+            currentTodos =
+                result.todos;
+
+            displayTodos(
+                currentTodos
+            );
+        }
+
+    } catch (error) {
+
+        setStatus("REPORT: ERROR");
+
+        responseElement.textContent =
+            `${error.name}: ${error.message}`;
+    }
+}
+
+
+/*
+ * Create a new VTODO.
+ *
+ * The visible serverUrl is the CalDAV calendar collection.
+ * A new UID is generated locally and used as the .ics resource name.
+ */
+const newTaskButton =
+    document.getElementById("newTaskButton");
+
+newTaskButton?.addEventListener(
+    "click",
+    async () => {
+
+        console.log("NEW TASK: CLICK");
+
+        const calendarUrl =
+            document
+                .getElementById("serverUrl")
+                .value
+                .trim();
+
+        const username =
+            document
+                .getElementById("username")
+                .value;
+
+        const password =
+            document
+                .getElementById("password")
+                .value;
+
+        if (!calendarUrl) {
+            setStatus(
+                "NEW TASK: No CalDAV calendar URL."
+            );
+            return;
+        }
+
+        /*
+         * Read the task summary from the visible input field.
+         * Electron does not support window.prompt().
+         */
+        const summaryElement =
+            document.getElementById("newTaskSummary");
+
+        const summary =
+            summaryElement
+                ? summaryElement.value.trim()
+                : "";
+
+        if (!summary) {
+            setStatus(
+                "NEW TASK: Please enter a Summary."
+            );
+
+            summaryElement?.focus();
+            return;
+        }
+
+        const uid =
+            crypto.randomUUID();
+
+        /*
+         * The CalDAV resource URL is derived internally.
+         * The user-entered calendar URL itself is never changed.
+         */
+        const resourceUrl =
+            `${calendarUrl.replace(/\/+$/, "")}/${uid}.ics`;
+
+        /*
+         * Minimal valid VTODO.
+         */
+        const body =
+`BEGIN:VCALENDAR\r
+PRODID:-//TB Planner//EN\r
+VERSION:2.0\r
+BEGIN:VTODO\r
+UID:${uid}\r
+SUMMARY:${summary}\r
+STATUS:NEEDS-ACTION\r
+PERCENT-COMPLETE:0\r
+END:VTODO\r
+END:VCALENDAR\r
+`;
+
+        setStatus("NEW TASK ...");
+
+        headersElement.textContent = "";
+        responseElement.textContent = "";
+
+        try {
+
+            const result =
+                await executeCalDavRequest({
+                    operation: "PUT",
+                    url: resourceUrl,
+                    username,
+                    password,
+                    body
+                });
+
+            setStatus(
+                `NEW TASK: HTTP ${result.status} ${result.statusText}`
+            );
+
+            headersElement.textContent =
+                result.headers;
+
+            responseElement.textContent =
+                result.body;
+
+            if (
+                result.status >= 200 &&
+                result.status < 300
+            ) {
+
+                /*
+                 * Store the newly created resource in the editor.
+                 * This allows immediate GET/PUT/DELETE testing.
+                 */
+                resourceUrlElement.value =
+                    resourceUrl;
+
+                putBodyElement.value =
+                    body;
+
+                etagElement.value =
+                    extractHeader(
+                        result.headers,
+                        "etag"
+                    ) || "";
+
+                /*
+                 * Reload the VTODO list from the server.
+                 */
+                await loadTodos();
+
+            }
+
+        } catch (error) {
+
+            setStatus(
+                "NEW TASK: ERROR"
+            );
+
+            responseElement.textContent =
+                `${error.name}: ${error.message}`;
+        }
+    }
+);
+
+
+
+
+/*
+ * Refresh button.
+ */
+document
+    .getElementById("refreshButton")
+    ?.addEventListener(
+        "click",
+        () => loadTodos()
+    );
+
+
+function setStatus(text) {
+    statusElement.textContent = text;
+}
+
+
+/*
+ * =========================================================
+ * VTODO selection / editor
+ * =========================================================
+ */
+
+const todoEditor =
+    document.getElementById("todoEditor");
+
+const todoEditorTask =
+    document.getElementById("todoEditorTask");
+
+const todoTitleInput =
+    document.getElementById("todoTitleInput");
+
+const todoDescriptionInput =
+    document.getElementById(
+        "todoDescriptionInput"
+    );
+
+const todoProgressInput =
+    document.getElementById(
+        "todoProgressInput"
+    );
+
+const todoProgressValue =
+    document.getElementById(
+        "todoProgressValue"
+    );
+
+const todoStartValue =
+    document.getElementById(
+        "todoStartValue"
+    );
+
+const todoDueValue =
+    document.getElementById(
+        "todoDueValue"
+    );
+
+const todoDurationValue =
+    document.getElementById(
+        "todoDurationValue"
+    );
+
+
+const renameTaskButton =
+    document.getElementById(
+        "renameTaskButton"
+    );
+
+const deleteTaskButton =
+    document.getElementById(
+        "deleteTaskButton"
+    );
+
+
+function selectTodo(todo) {
+
+    selectedTodo = todo;
+
+    updateTodoEditor();
+
+    updateSelectionButtons();
+
+    displayTodos(currentTodos);
+}
+
+
+function updateSelectionButtons() {
+
+    const enabled =
+        !!selectedTodo;
+
+    if (renameTaskButton) {
+        renameTaskButton.disabled =
+            !enabled;
+    }
+
+    if (deleteTaskButton) {
+        deleteTaskButton.disabled =
+            !enabled;
+    }
+
+    /*
+     * These buttons are selection-dependent too.
+     */
+    for (const id of [
+        "indentButton",
+        "outdentButton",
+        "moveUpButton",
+        "moveDownButton",
+        "previousWeekButton",
+        "previousDayButton",
+        "nextDayButton",
+        "nextWeekButton",
+        "durationMinusButton",
+        "durationPlusButton"
+    ]) {
+
+        const button =
+            document.getElementById(id);
+
+        if (button) {
+            button.disabled = !enabled;
+        }
+
+    }
+}
+
+
+function updateTodoEditor() {
+
+    if (!selectedTodo) {
+        hideTodoEditor();
+        return;
+    }
+
+    if (!todoEditor) {
+        return;
+    }
+
+    todoEditor.classList.remove(
+        "hidden"
+    );
+
+
+    if (todoEditorTask) {
+
+        todoEditorTask.textContent =
+            selectedTodo.summary ||
+            selectedTodo.uid ||
+            "";
+
+    }
+
+
+    if (todoTitleInput) {
+
+        todoTitleInput.value =
+            selectedTodo.summary || "";
+
+    }
+
+
+    if (todoDescriptionInput) {
+
+        todoDescriptionInput.value =
+            selectedTodo.description || "";
+
+    }
+
+
+    const progress =
+        Number.isFinite(
+            selectedTodo.percentComplete
+        )
+            ? selectedTodo.percentComplete
+            : 0;
+
+
+    if (todoProgressInput) {
+        todoProgressInput.value =
+            progress;
+    }
+
+    if (todoProgressValue) {
+
+        todoProgressValue.textContent =
+            `${progress} %`;
+
+    }
+
+
+    if (todoStartValue) {
+
+        todoStartValue.textContent =
+            formatIcsDate(
+                selectedTodo.dtstart
+            ) || "-";
+
+    }
+
+
+    if (todoDueValue) {
+
+        todoDueValue.textContent =
+            formatIcsDate(
+                selectedTodo.due
+            ) || "-";
+
+    }
+
+
+    if (todoDurationValue) {
+
+        todoDurationValue.textContent =
+            calculateTodoDuration(
+                selectedTodo.dtstart,
+                selectedTodo.due
+            );
+
+    }
+
+}
+
+
+function hideTodoEditor() {
+
+    if (todoEditor) {
+
+        todoEditor.classList.add(
+            "hidden"
+        );
+
+    }
+
+}
+
+
+function calculateTodoDuration(
+    start,
+    due
+) {
+
+    if (!start || !due) {
+        return "-";
+    }
+
+    const startDate =
+        parseIcsDate(start);
+
+    const dueDate =
+        parseIcsDate(due);
+
+    if (
+        !startDate ||
+        !dueDate
+    ) {
+        return "-";
+    }
+
+    const diff =
+        Math.round(
+            (
+                dueDate.getTime() -
+                startDate.getTime()
+            ) /
+            86400000
+        );
+
+    /*
+     * TB Planner treats identical start/due
+     * as one calendar day.
+     */
+    return `${Math.max(1, diff + 1)} Tag(e)`;
+}
+
+
+/*
+ * Progress slider.
+ */
+todoProgressInput?.addEventListener(
+    "input",
+    () => {
+
+        if (todoProgressValue) {
+
+            todoProgressValue.textContent =
+                `${todoProgressInput.value} %`;
+
+        }
+
+    }
+);
+
+
+/*
+ * Save editor.
+ */
+document
+    .getElementById("todoSaveButton")
+    ?.addEventListener(
+        "click",
+        () => saveSelectedTodo()
+    );
+
+
+/*
+ * Cancel editor.
+ *
+ * Reload the values from the selected VTODO.
+ */
+document
+    .getElementById("todoCancelButton")
+    ?.addEventListener(
+        "click",
+        () => updateTodoEditor()
+    );
+
+
+/*
+ * Top "Titel ändern" button.
+ *
+ * It now focuses the actual editor field.
+ */
+renameTaskButton?.addEventListener(
+    "click",
+    () => {
+
+        if (!selectedTodo) {
+            return;
+        }
+
+        updateTodoEditor();
+
+        todoTitleInput?.focus();
+
+        todoTitleInput?.select();
+
+    }
+);
+
+
+/*
+ * Top "Task löschen" button.
+ */
+deleteTaskButton?.addEventListener(
+    "click",
+    () => deleteSelectedTodo()
+);
+
+
+/*
+ * Editor DELETE button.
+ */
+document
+    .getElementById("todoDeleteButton")
+    ?.addEventListener(
+        "click",
+        () => deleteSelectedTodo()
+    );
+
+
+async function saveSelectedTodo() {
+
+    if (!selectedTodo) {
+        return;
+    }
+
+    if (!selectedTodo.href) {
+
+        setStatus(
+            "PUT: VTODO has no resource URL."
+        );
+
+        return;
+
+    }
+
+
+    const calendarUrl =
+        document
+            .getElementById("serverUrl")
+            .value
+            .trim();
+
+    const username =
+        document
+            .getElementById("username")
+            .value;
+
+    const password =
+        document
+            .getElementById("password")
+            .value;
+
+
+    const summary =
+        todoTitleInput?.value.trim() || "";
+
+    if (!summary) {
+
+        setStatus(
+            "PUT: Titel darf nicht leer sein."
+        );
+
+        todoTitleInput?.focus();
+
+        return;
+
+    }
+
+
+    const description =
+        todoDescriptionInput?.value || "";
+
+
+    const percent =
+        Number(
+            todoProgressInput?.value || 0
+        );
+
+
+    const body =
+        buildVTodoIcs(
+            selectedTodo,
+            {
+                summary,
+                description,
+                percentComplete:
+                    Number.isFinite(percent)
+                        ? percent
+                        : 0
+            }
+        );
+
+
+    setStatus("PUT ...");
+
+    try {
+
+        const result =
+            await executeCalDavRequest({
+                operation: "PUT",
+                url: resolveResourceUrl(
+                    calendarUrl,
+                    selectedTodo.href
+                ),
+                username,
+                password,
+                body
+            });
+
+
+        headersElement.textContent =
+            result.headers;
+
+        responseElement.textContent =
+            result.body;
+
+
+        if (
+            result.status >= 200 &&
+            result.status < 300
+        ) {
+
+            setStatus(
+                `PUT: HTTP ${result.status} ${result.statusText}`
+            );
+
+            await loadTodos();
+
+        } else {
+
+            setStatus(
+                `PUT: HTTP ${result.status} ${result.statusText}`
+            );
+
+        }
+
+    } catch (error) {
+
+        setStatus("PUT: ERROR");
+
+        responseElement.textContent =
+            `${error.name}: ${error.message}`;
+
+    }
+
+}
+
+
+function resolveResourceUrl(
+    calendarUrl,
+    href
+) {
+
+    if (!href) {
+        return "";
+    }
+
+    if (
+        href.startsWith("http://") ||
+        href.startsWith("https://")
+    ) {
+        return href;
+    }
+
+    return new URL(
+        href,
+        calendarUrl
+    ).toString();
+
+}
+
+
+function escapeIcsText(value) {
+
+    return String(value ?? "")
+        .replace(/\\/g, "\\\\")
+        .replace(/;/g, "\\;")
+        .replace(/,/g, "\\,")
+        .replace(/\r?\n/g, "\\n");
+
+}
+
+
+function buildVTodoIcs(
+    todo,
+    changes
+) {
+
+    const summary =
+        escapeIcsText(
+            changes.summary
+        );
+
+    const description =
+        escapeIcsText(
+            changes.description
+        );
+
+
+    const percent =
+        Number.isFinite(
+            changes.percentComplete
+        )
+            ? changes.percentComplete
+            : 0;
+
+
+    const lines = [
+        "BEGIN:VCALENDAR",
+        "PRODID:-//TB Planner//EN",
+        "VERSION:2.0",
+        "BEGIN:VTODO",
+        `UID:${todo.uid}`,
+        `SUMMARY:${summary}`
+    ];
+
+
+    if (description) {
+
+        lines.push(
+            `DESCRIPTION:${description}`
+        );
+
+    }
+
+
+    if (todo.status) {
+
+        lines.push(
+            `STATUS:${todo.status}`
+        );
+
+    } else {
+
+        lines.push(
+            "STATUS:NEEDS-ACTION"
+        );
+
+    }
+
+
+    lines.push(
+        `PERCENT-COMPLETE:${percent}`
+    );
+
+
+    if (todo.dtstart) {
+
+        lines.push(
+            `DTSTART${todo.dtstartParameters ? ";" + todo.dtstartParameters : ""}:${todo.dtstart}`
+        );
+
+    }
+
+
+    if (todo.due) {
+
+        lines.push(
+            `DUE${todo.dueParameters ? ";" + todo.dueParameters : ""}:${todo.due}`
+        );
+
+    }
+
+
+    if (todo.wbs) {
+
+        lines.push(
+            `X-TB-PLANNER-WBS:${escapeIcsText(todo.wbs)}`
+        );
+
+    }
+
+
+    if (todo.parent) {
+
+        lines.push(
+            `X-TB-PLANNER-PARENT:${escapeIcsText(todo.parent)}`
+        );
+
+    }
+
+
+    if (Number.isFinite(todo.order)) {
+
+        lines.push(
+            `X-TB-PLANNER-ORDER:${todo.order}`
+        );
+
+    }
+
+
+    lines.push(
+        "END:VTODO",
+        "END:VCALENDAR"
+    );
+
+
+    return (
+        lines.join("\r\n") +
+        "\r\n"
+    );
+
+}
+
+
+async function deleteSelectedTodo() {
+
+    if (!selectedTodo) {
+        return;
+    }
+
+    if (!selectedTodo.href) {
+
+        setStatus(
+            "DELETE: VTODO has no resource URL."
+        );
+
+        return;
+
+    }
+
+
+    const confirmed =
+        window.confirm(
+            `Task "${selectedTodo.summary || selectedTodo.uid}" wirklich löschen?`
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+
+    const calendarUrl =
+        document
+            .getElementById("serverUrl")
+            .value
+            .trim();
+
+    const username =
+        document
+            .getElementById("username")
+            .value;
+
+    const password =
+        document
+            .getElementById("password")
+            .value;
+
+
+    setStatus("DELETE ...");
+
+
+    try {
+
+        const result =
+            await executeCalDavRequest({
+                operation: "DELETE",
+                url: resolveResourceUrl(
+                    calendarUrl,
+                    selectedTodo.href
+                ),
+                username,
+                password
+            });
+
+
+        headersElement.textContent =
+            result.headers;
+
+        responseElement.textContent =
+            result.body;
+
+
+        if (
+            result.status >= 200 &&
+            result.status < 300
+        ) {
+
+            setStatus(
+                `DELETE: HTTP ${result.status} ${result.statusText}`
+            );
+
+            selectedTodo = null;
+
+            hideTodoEditor();
+
+            updateSelectionButtons();
+
+            await loadTodos();
+
+        } else {
+
+            setStatus(
+                `DELETE: HTTP ${result.status} ${result.statusText}`
+            );
+
+        }
+
+    } catch (error) {
+
+        setStatus("DELETE: ERROR");
+
+        responseElement.textContent =
+            `${error.name}: ${error.message}`;
+
+    }
+
+}
+
+
+/*
+ * Initial selection state.
+ */
+updateSelectionButtons();
+

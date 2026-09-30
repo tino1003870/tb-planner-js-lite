@@ -1,0 +1,8 @@
+
+# Node.js dependencies
+node_modules/
+
+# Electron build/output
+dist/
+out/
+release/
